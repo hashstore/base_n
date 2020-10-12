@@ -10,4 +10,5 @@ pip install base_n
 
 ```
 pip install -e .[dev]
+pytest --doctest-modules --cov
 ```
