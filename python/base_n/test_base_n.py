@@ -29,11 +29,12 @@ def test_randomized():
     all_codecs = [base_n.base_n(k) for k in base_n.alphabets]
 
     seed(0)
-    for sz in [1, 2, 0, 3, 1, 77, 513, 732]:
-        b = random_bytes(sz)
-
-        for codec in all_codecs:
-            s = codec.encode(b)
-            assert codec.decode(s) == b
-            s = codec.encode_check(b)
-            assert codec.decode_check(s) == b
+    zeropad = [0, 1, *(randint(2, 255) for _ in range(3))]
+    for sz in [1, 2, 0, 3, 16, 77, 513, 732]:
+        for z in zeropad:
+            b = b"\x00" * z + random_bytes(sz)
+            for codec in all_codecs:
+                s = codec.encode(b)
+                assert codec.decode(s) == b
+                s = codec.encode_check(b)
+                assert codec.decode_check(s) == b

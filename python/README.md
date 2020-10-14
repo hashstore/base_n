@@ -1,6 +1,7 @@
-#base_n
+# base_n
 
-Implementation of varies encoding with configurable base and alphabet
+Encoding binary data using with configurable alphabet of varies length (base)
+
 
 ```
 pip install base_n

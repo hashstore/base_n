@@ -15,7 +15,7 @@ under Apache and MIT.
 """
 
 from hashlib import sha256
-from typing import Dict
+from typing import Dict, List, Union
 
 alphabets = {
     2: "01",
@@ -37,20 +37,6 @@ class BaseN:
         self.size = len(alphabet)
         self.index = {alphabet[i]: i for i in range(self.size)}
 
-    def encode_int(self, i: int) -> str:
-        """Encode an integer"""
-        if i < 0:
-            raise AssertionError("uint expected: %r" % i)
-        return self.alphabet[0] if i == 0 else self._encode_int(i)
-
-    def _encode_int(self, i: int) -> str:
-        """unsafe encode_int"""
-        string = ""
-        while i:
-            i, idx = divmod(i, self.size)
-            string = self.alphabet[idx] + string
-        return string
-
     def encode(self, v: bytes) -> str:
         """Encode a string"""
         if not isinstance(v, bytes):
@@ -62,22 +48,10 @@ class BaseN:
         v = v.lstrip(b"\0")
         count_of_nulls = origlen - len(v)
 
-        p, acc = 1, 0
-        for c in reversed(v):
-            acc += p * c
-            p <<= 8
+        return self.alphabet[0] * count_of_nulls + self._encode_non_nulls(v)
 
-        result = self._encode_int(acc)
-
-        return self.alphabet[0] * count_of_nulls + result
-
-    def decode_int(self, v: str) -> int:
-        """Decode a string into integer"""
-
-        decimal = 0
-        for char in v:
-            decimal = decimal * self.size + self.index[char]
-        return decimal
+    def _encode_non_nulls(self, v: bytes) -> str:
+        pass
 
     def decode(self, v: str) -> bytes:
         """Decode string"""
@@ -90,14 +64,10 @@ class BaseN:
         v = v.lstrip(self.alphabet[0])
         count_of_nulls = origlen - len(v)
 
-        acc = self.decode_int(v)
+        return b"\0" * count_of_nulls + self._decode_non_nulls(v)
 
-        result = []
-        while acc > 0:
-            acc, mod = divmod(acc, 256)
-            result.append(mod)
-
-        return b"\0" * count_of_nulls + bytes(reversed(result))
+    def _decode_non_nulls(self, v: str) -> bytes:
+        pass
 
     def encode_check(self, v: bytes) -> str:
         """Encode a string with a 4 character checksum"""
@@ -114,8 +84,88 @@ class BaseN:
 
         if check != digest[:4]:
             raise ValueError("Invalid checksum")
-
         return result
+
+
+class BigIntBaseN(BaseN):
+    # def encode_int(self, i: int) -> str:
+    #     """Encode an integer"""
+    #     if i < 0:
+    #         raise AssertionError("uint expected: %r" % i)
+    #     return self.alphabet[0] if i == 0 else self._encode_int(i)
+
+    def _encode_int(self, i: int) -> str:
+        """unsafe encode_int"""
+        string = ""
+        while i:
+            i, idx = divmod(i, self.size)
+            string = self.alphabet[idx] + string
+        return string
+
+    def _decode_int(self, v: str) -> int:
+        """Decode a string into integer"""
+
+        decimal = 0
+        for char in v:
+            decimal = decimal * self.size + self.index[char]
+        return decimal
+
+    def _decode_non_nulls(self, v: str) -> bytes:
+        acc = self._decode_int(v)
+
+        result = []
+        while acc > 0:
+            acc, mod = divmod(acc, 256)
+            result.append(mod)
+
+        return bytes(reversed(result))
+
+    def _encode_non_nulls(self, v: bytes) -> str:
+        p, acc = 1, 0
+        for c in reversed(v):
+            acc += p * c
+            p <<= 8
+
+        return self._encode_int(acc)
+
+
+class LoopBaseN(BaseN):
+    def _divmod_base(self, buff: List[int], startAt: int) -> int:
+        remaining = 0
+        for i in range(startAt, len(buff)):
+            num = remaining * 256 + buff[i]
+            buff[i], remaining = divmod(num, self.size)
+        return remaining
+
+    def _divmod_256(self, buff: List[int], startAt: int) -> int:
+        remaining = 0
+        for i in range(startAt, len(buff)):
+            num = self.size * remaining + buff[i]
+            buff[i], remaining = divmod(num, 256)
+        return remaining
+
+    def _decode_non_nulls(self, v: str) -> bytes:
+        v = [self.index[ch] for ch in v]
+        i = 0
+        output = []
+        while i < len(v):
+            mod = self._divmod_256(v, i)
+            if v[i] == 0:
+                i += 1
+            output.append(mod)
+        return bytes(reversed(output)).lstrip(b"\0")
+
+    def _encode_non_nulls(self, v: bytes) -> str:
+        v = [n for n in v]
+        output = []
+        i = 0
+        while i < len(v):
+            mod = self._divmod_base(v, i)
+            if v[i] == 0:
+                i += 1
+            output.append(self.alphabet[mod])
+
+        return "".join(reversed(output))
 
 
 cached_instances: Dict[int, BaseN] = {}
@@ -145,5 +195,5 @@ def base_n(alphabet_id: int) -> BaseN:
     :return: BaseN
     """
     if alphabet_id not in cached_instances:
-        cached_instances[alphabet_id] = BaseN(alphabets[alphabet_id])
+        cached_instances[alphabet_id] = BigIntBaseN(alphabets[alphabet_id])
     return cached_instances[alphabet_id]

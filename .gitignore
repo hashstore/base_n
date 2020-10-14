@@ -1,4 +1,4 @@
-/python/__pycache__/
+__pycache__
 /python/base_n.egg-info/
 /python/dist/
 /python/.coverage
