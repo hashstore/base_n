@@ -2,3 +2,4 @@ __pycache__
 /python/base_n.egg-info/
 /python/dist/
 /python/.coverage
+.pytest_cache

@@ -3,8 +3,9 @@ base_n encoding is just like base58, but allow to use flexible alphabet.
 
 https://en.wikipedia.org/wiki/Base58
 
-Original algorithm is taken literaly from python base58 project
+Original algorithm is taken from python base58 project
 https://github.com/keis/base58 (MIT license)
+and generalized for any alphabet
 
 and list of alphabets is taken from
 https://github.com/cryptocoinjs/base-x (MIT license)
@@ -15,7 +16,7 @@ under Apache and MIT.
 """
 
 from hashlib import sha256
-from typing import Dict, List, Union
+from typing import Dict, List, Tuple, Union
 
 alphabets = {
     2: "01",
@@ -168,10 +169,10 @@ class LoopBaseN(BaseN):
         return "".join(reversed(output))
 
 
-cached_instances: Dict[int, BaseN] = {}
+cached_instances: Dict[Tuple[str, str], BaseN] = {}
 
 
-def base_n(alphabet_id: int) -> BaseN:
+def base_n(alphabet: Union[int, str], constructor=BigIntBaseN) -> BaseN:
     """
     lazy initialization for BaseN instance
 
@@ -194,6 +195,11 @@ def base_n(alphabet_id: int) -> BaseN:
                         `alphabets` dictionary
     :return: BaseN
     """
-    if alphabet_id not in cached_instances:
-        cached_instances[alphabet_id] = BigIntBaseN(alphabets[alphabet_id])
-    return cached_instances[alphabet_id]
+    alphabet_id = None
+    if isinstance(alphabet, int):
+        alphabet_id = alphabet
+        alphabet = alphabets[alphabet_id]
+    k = (constructor.__name__, alphabet)
+    if alphabet not in cached_instances:
+        cached_instances[k] = constructor(alphabet)
+    return cached_instances[k]
