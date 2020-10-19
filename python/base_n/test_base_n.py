@@ -1,6 +1,6 @@
 import datetime
-from itertools import chain
 import sys
+from itertools import chain
 from pathlib import Path
 from random import randint, seed
 from typing import Type
@@ -57,11 +57,15 @@ def all_codecs(constructor: Type[base_n.BaseN]):
     return (base_n.base_n(k, constructor=constructor) for k in base_n.alphabets)
 
 
-BENCH_DIR = "../benchmark/data"
+BENCH_DIR = "../benchmark"
 
 
-def write_measurements(dir=BENCH_DIR):
+def write_measurements(bench_dir=BENCH_DIR):
+    dir = f"{bench_dir}/measurements"
     with open(f"{dir}/{datetime.date.today()}_python_base_n.csv", "wt") as w:
+        w.write(
+            "algo,sample,alphabet_size,encode_time,decode_time,encoded_with_check_time,decoded_with_check_time\n"
+        )
         for t in chain(
             measure_all(10, base_n.BigIntBaseN),
             measure_all(10, base_n.LoopBaseN),
@@ -69,7 +73,8 @@ def write_measurements(dir=BENCH_DIR):
             w.write(",".join(map(str, t)) + "\n")
 
 
-def write_samples(dir=BENCH_DIR):
+def write_samples(bench_dir=BENCH_DIR):
+    dir = f"{bench_dir}/samples"
     for test_name, b in produce_random_samples():
         open(f"{dir}/{test_name}.bin", "wb").write(b)
         for codec in all_codecs(base_n.BigIntBaseN):
@@ -84,7 +89,8 @@ ENCODES_WITH_CHECK = {}
 ENCODES = {}
 
 
-def load_files(dir=BENCH_DIR):
+def load_files(bench_dir=BENCH_DIR):
+    dir = f"{bench_dir}/samples"
     for f in Path(dir).iterdir():
         test_name = f.stem
         if f.suffix == ".bin":
@@ -117,9 +123,10 @@ def measure_all(mills: int, constructor: Type[base_n.BaseN]):
 
 def test_all_implementations():
     load_files()
-    for _ in measure_all(1, base_n.BigIntBaseN):
-        pass
-    for _ in measure_all(1, base_n.LoopBaseN):
+    for _ in chain(
+        measure_all(1, base_n.BigIntBaseN),
+        measure_all(1, base_n.LoopBaseN),
+    ):
         pass
 
 
@@ -131,4 +138,4 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in OPTS:
         OPTS[sys.argv[1]]()
     else:
-        print(f"Pick one: {OPTS.keys()}")
+        print(f"Pick one: {list(OPTS)}")
