@@ -16,7 +16,8 @@ under Apache and MIT.
 """
 
 from hashlib import sha256
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union, NamedTuple
+from math import log, ceil
 
 alphabets = {
     2: "01",
@@ -28,15 +29,63 @@ alphabets = {
     58: "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz",
     62: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
     64: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
-    66: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~",
+    67: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~",
 }
 
+def _logint(n)->int:
+    return int(log(n) * 10000)
 
-class BaseN:
+LN_256 = _logint(256)
+
+class CodecDirection(NamedTuple):
+    bases: Tuple[int,int]
+    logs: Tuple[int,int]
+
+    def aproximate_size(self, size: int) -> int:
+        return ceil(size * self.logs[0]/self.logs[1])
+
+
+class Alphabet:
     def __init__(self, alphabet: str) -> None:
-        self.alphabet = alphabet
-        self.size = len(alphabet)
-        self.index = {alphabet[i]: i for i in range(self.size)}
+        self.key = alphabet
+        self.zero = self.key[0]
+        self.base = len(alphabet)
+        self.index = {alphabet[i]: i for i in range(self.base)}
+        ln_base = _logint(self.base)
+        self.encode_direction = CodecDirection((256, self.base),(LN_256, ln_base))
+        self.decode_direction = CodecDirection((self.base, 256),(ln_base, LN_256))
+        
+    def __str__(self):
+        return self.key
+
+    def to_digits(self, encoded:str)->List[int]:
+        return [ self.index[ch] for ch in encoded]
+
+    def to_chars(self, digits:List[int]) -> str:
+        return ''.join( self.key[d] for d in digits)
+
+
+_cached_alphabets = {}
+
+def ensure_alphabet(abc:Union[Alphabet,str,int]) -> Alphabet:
+    if isinstance(abc, Alphabet):
+        return abc
+    if isinstance(abc, int):
+        abc = alphabets[abc]
+    if isinstance(abc, str):
+        if abc not in _cached_alphabets:
+            _cached_alphabets[abc] = Alphabet(abc)
+        return _cached_alphabets[abc]
+    raise AssertionError("incompatible args: %r" % abc)
+    
+class BaseN:
+    def __init__(self, alphabet: Union[Alphabet,str,int]) -> None:
+        self.alphabet = ensure_alphabet(alphabet)
+
+    
+    def _code(self, v: List[int], direction: CodecDirection) -> List[int]:
+        """ placeholder, need to be overridden"""
+        return []
 
     def encode(self, v: bytes) -> str:
         """Encode a string"""
@@ -48,11 +97,8 @@ class BaseN:
         origlen = len(v)
         v = v.lstrip(b"\0")
         count_of_nulls = origlen - len(v)
-
-        return self.alphabet[0] * count_of_nulls + self._encode_non_nulls(v)
-
-    def _encode_non_nulls(self, v: bytes) -> str:
-        pass
+        digits = self._code(list(v), self.alphabet.encode_direction)
+        return self.alphabet.zero * count_of_nulls + self.alphabet.to_chars(digits)
 
     def decode(self, v: str) -> bytes:
         """Decode string"""
@@ -60,15 +106,13 @@ class BaseN:
         if not isinstance(v, str):
             v = v.decode("ascii")
 
-        # strip null bytes
         origlen = len(v)
-        v = v.lstrip(self.alphabet[0])
+        v = v.lstrip(self.alphabet.zero)
         count_of_nulls = origlen - len(v)
 
-        return b"\0" * count_of_nulls + self._decode_non_nulls(v)
+        digits = self._code(self.alphabet.to_digits(v), self.alphabet.decode_direction)
 
-    def _decode_non_nulls(self, v: str) -> bytes:
-        pass
+        return b"\0" * count_of_nulls + bytes(digits)
 
     def encode_check(self, v: bytes) -> str:
         """Encode a string with a 4 character checksum"""
@@ -88,91 +132,56 @@ class BaseN:
         return result
 
 
+def _split_int(i: int, base: int) -> List[int]:
+    """split int to digits"""
+    result = []
+    while i:
+        i, digit = divmod(i, base)
+        result.insert(0, digit)
+    return result
+
+def _combine_int(digits: List[int], base:int) -> int:
+    """Combine digits into big integer"""
+    acc = 0
+    for d in digits:
+        acc = acc * base + d
+    return acc
+
+def _divmod_buff(buff: List[int], startAt: int, base: int, divisor:int) -> int:
+    remaining = 0
+    for i in range(startAt, len(buff)):
+        num = base * remaining + buff[i]
+        buff[i], remaining = divmod(num, divisor)
+    return remaining
+
 class BigIntBaseN(BaseN):
-    # def encode_int(self, i: int) -> str:
-    #     """Encode an integer"""
-    #     if i < 0:
-    #         raise AssertionError("uint expected: %r" % i)
-    #     return self.alphabet[0] if i == 0 else self._encode_int(i)
 
-    def _encode_int(self, i: int) -> str:
-        """unsafe encode_int"""
-        string = ""
-        while i:
-            i, idx = divmod(i, self.size)
-            string = self.alphabet[idx] + string
-        return string
-
-    def _decode_int(self, v: str) -> int:
-        """Decode a string into integer"""
-
-        decimal = 0
-        for char in v:
-            decimal = decimal * self.size + self.index[char]
-        return decimal
-
-    def _decode_non_nulls(self, v: str) -> bytes:
-        acc = self._decode_int(v)
-
-        result = []
-        while acc > 0:
-            acc, mod = divmod(acc, 256)
-            result.append(mod)
-
-        return bytes(reversed(result))
-
-    def _encode_non_nulls(self, v: bytes) -> str:
-        p, acc = 1, 0
-        for c in reversed(v):
-            acc += p * c
-            p <<= 8
-
-        return self._encode_int(acc)
+    def _code(self, v: List[int], direction: CodecDirection) -> List[int]:
+        acc = _combine_int(v, direction.bases[0])
+        return _split_int(acc, direction.bases[1])
 
 
 class LoopBaseN(BaseN):
-    def _divmod_base(self, buff: List[int], startAt: int) -> int:
-        remaining = 0
-        for i in range(startAt, len(buff)):
-            num = remaining * 256 + buff[i]
-            buff[i], remaining = divmod(num, self.size)
-        return remaining
 
-    def _divmod_256(self, buff: List[int], startAt: int) -> int:
-        remaining = 0
-        for i in range(startAt, len(buff)):
-            num = self.size * remaining + buff[i]
-            buff[i], remaining = divmod(num, 256)
-        return remaining
-
-    def _decode_non_nulls(self, v: str) -> bytes:
-        v = [self.index[ch] for ch in v]
+    def _code(self, v: List[int], direction: CodecDirection) -> List[int]:
         i = 0
         output = []
-        while i < len(v):
-            mod = self._divmod_256(v, i)
+        last_non_zero = 0
+        stop = direction.aproximate_size(len(v))
+        while i < len(v) and len(output) < stop:
+            mod = _divmod_buff(v, i, *direction.bases)
             if v[i] == 0:
                 i += 1
             output.append(mod)
-        return bytes(reversed(output)).lstrip(b"\0")
-
-    def _encode_non_nulls(self, v: bytes) -> str:
-        v = [n for n in v]
-        output = []
-        i = 0
-        while i < len(v):
-            mod = self._divmod_base(v, i)
-            if v[i] == 0:
-                i += 1
-            output.append(self.alphabet[mod])
-
-        return "".join(reversed(output))
+            if mod:
+                last_non_zero = len(output)
+        return reversed(output[:last_non_zero])
 
 
 cached_instances: Dict[Tuple[str, str], BaseN] = {}
 
 
-def base_n(alphabet: Union[int, str], constructor=BigIntBaseN) -> BaseN:
+def base_n(alphabet: Union[Alphabet, int, str], constructor=BigIntBaseN) -> BaseN:
     """
     lazy initialization for BaseN instance
 
@@ -191,15 +200,12 @@ def base_n(alphabet: Union[int, str], constructor=BigIntBaseN) -> BaseN:
     ValueError: Invalid checksum
 
 
-    :param alphabet_id: reference to predefined alphabet from
+    :param alphabet: alphabet defined by id, alphabet string, or `Alphabet` instance
                         `alphabets` dictionary
     :return: BaseN
     """
-    alphabet_id = None
-    if isinstance(alphabet, int):
-        alphabet_id = alphabet
-        alphabet = alphabets[alphabet_id]
-    k = (constructor.__name__, alphabet)
-    if alphabet not in cached_instances:
+    alphabet = ensure_alphabet(alphabet)
+    k = (constructor.__name__, alphabet.key)
+    if k not in cached_instances:
         cached_instances[k] = constructor(alphabet)
     return cached_instances[k]

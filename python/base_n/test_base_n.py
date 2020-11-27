@@ -78,8 +78,8 @@ def write_samples(bench_dir=BENCH_DIR):
     for test_name, b in produce_random_samples():
         open(f"{dir}/{test_name}.bin", "wb").write(b)
         for codec in all_codecs(base_n.BigIntBaseN):
-            open(f"{dir}/{test_name}.e{codec.size}", "wt").write(codec.encode(b))
-            open(f"{dir}/{test_name}.ewc{codec.size}", "wt").write(
+            open(f"{dir}/{test_name}.e{codec.alphabet.base}", "wt").write(codec.encode(b))
+            open(f"{dir}/{test_name}.ewc{codec.alphabet.base}", "wt").write(
                 codec.encode_check(b)
             )
 
@@ -100,29 +100,42 @@ def load_files(bench_dir=BENCH_DIR):
         elif f.suffix.startswith(".e"):
             ENCODES[(test_name, int(f.suffix[2:]))] = f.open("rt").read()
 
+def ensure_load_files():
+    if len(BINS) == 0 :
+        load_files()
 
 def measure_all(mills: int, constructor: Type[base_n.BaseN]):
     for test_name, b in produce_random_samples():
         for codec in all_codecs(constructor):
             encoded, encode_time = measure(lambda: codec.encode(b), mills)
             if len(ENCODES):
-                assert ENCODES[(test_name, codec.size)] == encoded
+                assert ENCODES[(test_name, codec.alphabet.base)] == encoded
             decoded, decode_time = measure(lambda: codec.decode(encoded), mills)
             assert decoded == b
             encoded_with_check, encoded_with_check_time = measure(
                 lambda: codec.encode_check(b), mills
             )
             if len(ENCODES_WITH_CHECK):
-                assert ENCODES_WITH_CHECK[(test_name, codec.size)] == encoded_with_check
+                assert ENCODES_WITH_CHECK[(test_name, codec.alphabet.base)] == encoded_with_check
             decoded_with_check, decoded_with_check_time = measure(
                 lambda: codec.decode_check(encoded_with_check), mills
             )
             assert decoded_with_check == b
-            yield constructor.__name__, test_name, codec.size, encode_time, decode_time, encoded_with_check_time, decoded_with_check_time
+            yield constructor.__name__, test_name, codec.alphabet.base, encode_time, decode_time, encoded_with_check_time, decoded_with_check_time
+
+def test_alphabet():
+    ensure_load_files()
+    for t, alphabet_id in ENCODES :
+        if t.startswith('z0_'):
+            abc = base_n.ensure_alphabet(alphabet_id)
+            binary_l = len(BINS[t])
+            encoded_l = len(ENCODES[(t,alphabet_id)])
+            assert abc.encode_direction.aproximate_size(binary_l) >= encoded_l
+            assert abc.decode_direction.aproximate_size(encoded_l) >= binary_l
 
 
 def test_all_implementations():
-    load_files()
+    ensure_load_files()
     for _ in chain(
         measure_all(1, base_n.BigIntBaseN),
         measure_all(1, base_n.LoopBaseN),

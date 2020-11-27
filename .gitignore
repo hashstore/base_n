@@ -3,3 +3,4 @@ __pycache__
 /python/dist/
 /python/.coverage
 .pytest_cache
+.coverage
