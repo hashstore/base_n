@@ -24,6 +24,27 @@ final alphabets = Map.unmodifiable({
 
 var _cached_alphabets = {};
 
+class CodecDirection {
+  List<int> bases;
+  List<int> logs;
+
+  CodecDirection(this.bases, this.logs);
+
+  int aproximate_size(int size) {
+    return 1 + size * logs[0] ~/ logs[1];
+  }
+
+  int divmod(List<int> digits, int startAt) {
+    int remaining = 0;
+    for (int i = startAt; i < digits.length; i++) {
+      int num = bases[0] * remaining + digits[i];
+      digits[i] = num ~/ bases[1];
+      remaining = num % bases[1];
+    }
+    return remaining;
+  }
+}
+
 class Alphabet {
   final String key;
   final List<int> _forward;
@@ -45,36 +66,17 @@ class Alphabet {
     return Alphabet(alphabets[id]);
   }
 
+  CodecDirection get decode_direction =>
+      CodecDirection([length, 256], [ln_base, ln_256]);
+  CodecDirection get encode_direction =>
+      CodecDirection([256, length], [ln_256, ln_base]);
+
   int get length => key.length;
 
   List<int> to_digits(String chars) => [for (var c in chars.runes) _inverse[c]];
 
   String to_chars(List<int> digits) =>
       String.fromCharCodes([for (var d in digits) _forward[d]]);
-
-  int divmod256(List<int> digits, int startAt) {
-    int remaining = 0;
-    for (int i = startAt; i < digits.length; i++) {
-      int num = this.length * remaining + (digits[i] & 0xFF);
-      digits[i] = num ~/ 256;
-      remaining = num % 256;
-    }
-    return remaining;
-  }
-
-  int divmodBase(List<int> number, int startAt) {
-    int remaining = 0;
-    for (int i = startAt; i < number.length; i++) {
-      int num = (0xFF & remaining) * 256 + number[i];
-      number[i] = num ~/ this.length;
-      remaining = num % this.length;
-    }
-    return remaining;
-  }
-
-  int encodeSize(int bytesSize) => 1 + (bytesSize * ln_256) ~/ ln_base;
-
-  int decodeSize(int digitsSize) => 1 + (digitsSize * ln_base) ~/ ln_256;
 }
 
 List<int> _sha256x2(List<int> b) =>
@@ -95,8 +97,7 @@ abstract class BaseN extends Codec<List<int>, String> {
   DigitsEncoder _encoder;
   DigitsDecoder _decoder;
 
-  List<int> encodeDigits(List<int> bytes);
-  List<int> decodeDigits(List<int> digits);
+  List<int> codeDigits(List<int> digits, CodecDirection direction);
 
   String encodeCheck(List<int> bytes) {
     Uint8List buffer = Uint8List(bytes.length + 4);
@@ -140,8 +141,8 @@ class DigitsEncoder extends Converter<List<int>, String> {
   DigitsEncoder(BaseN this.logic);
 
   @override
-  String convert(List<int> bytes) =>
-      logic.alphabet.to_chars(logic.encodeDigits(List.from(bytes)));
+  String convert(List<int> bytes) => logic.alphabet.to_chars(
+      logic.codeDigits(List.from(bytes), logic.alphabet.encode_direction));
 }
 
 class DigitsDecoder extends Converter<String, List<int>> {
@@ -149,45 +150,25 @@ class DigitsDecoder extends Converter<String, List<int>> {
   DigitsDecoder(BaseN this.logic);
 
   @override
-  List<int> convert(String text) =>
-      this.logic.decodeDigits(this.logic.alphabet.to_digits(text));
+  List<int> convert(String text) => this.logic.codeDigits(
+      this.logic.alphabet.to_digits(text), logic.alphabet.decode_direction);
 }
 
 class LoopBaseN extends BaseN {
   LoopBaseN(Alphabet alphabet) : super(alphabet);
 
   @override
-  List<int> encodeDigits(List<int> bytes) {
+  List<int> codeDigits(List<int> bytes, CodecDirection direction) {
     if (bytes.length == 0) return [];
     int leadingZeroes = countleadingZeros(bytes);
     int startAt = leadingZeroes;
-    int encodeSize = alphabet.encodeSize(bytes.length - leadingZeroes);
-    Uint8List out = Uint8List(leadingZeroes + encodeSize);
+    int codeSize = direction.aproximate_size(bytes.length - leadingZeroes);
+    Uint8List out = Uint8List(leadingZeroes + codeSize);
     int j = out.length;
     int lastNonZero = j;
     while (startAt < bytes.length && leadingZeroes < j) {
-      int mod = alphabet.divmodBase(bytes, startAt);
+      int mod = direction.divmod(bytes, startAt);
       if (bytes[startAt] == 0) startAt++;
-      out[--j] = mod;
-      if (mod != 0) lastNonZero = j;
-    }
-    return lastNonZero == leadingZeroes
-        ? out
-        : out.sublist(lastNonZero - leadingZeroes);
-  }
-
-  @override
-  List<int> decodeDigits(List<int> digits) {
-    if (digits.length == 0) return [];
-    int leadingZeroes = countleadingZeros(digits);
-    int startAt = leadingZeroes;
-    int decodeSize = alphabet.decodeSize(digits.length - leadingZeroes);
-    Uint8List out = new Uint8List(leadingZeroes + decodeSize);
-    int j = out.length;
-    int lastNonZero = j;
-    while (startAt < digits.length && leadingZeroes < j) {
-      int mod = alphabet.divmod256(digits, startAt);
-      if (digits[startAt] == 0) startAt++;
       out[--j] = mod;
       if (mod != 0) lastNonZero = j;
     }
