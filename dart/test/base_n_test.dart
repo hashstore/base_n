@@ -47,7 +47,7 @@ void main() {
       }
     });
     test("testSamples", () {
-      loadSamples().onDone(() {
+      loadSamples().then((_) {
         expect(BINS.length, equals(40));
         runThruSamples((id) => BigIntBaseN(Alphabet.predefined(id)) as BaseN);
         runThruSamples((id) => LoopBaseN(Alphabet.predefined(id)) as BaseN);

@@ -32,23 +32,23 @@ class EncodesKey {
 
 const BENCH_DIR = '../benchmark';
 
-loadSamples() {
+Future<void> loadSamples() async {
   var dir = new Directory(BENCH_DIR + '/samples');
-  return dir.list().listen((e) {
-    if (e is File) {
+  await for(var e in dir.list()) {
+    if ( e is File) {
       File f = e;
       var path = f.path;
       var test_name = p.basenameWithoutExtension(path);
       var ext = p.extension(path);
       if (ext == ".bin") {
-        BINS[test_name] = f.readAsBytesSync();
+        BINS[test_name] = await f.readAsBytes();
       } else if (ext.startsWith(".ewc")) {
         ENCODES_WITH_CHECK[EncodesKey(test_name, int.parse(ext.substring(4)))] =
-            f.readAsStringSync();
+            await f.readAsString();
       } else if (ext.startsWith(".e")) {
         ENCODES[EncodesKey(test_name, int.parse(ext.substring(2)))] =
-            f.readAsStringSync();
+            await f.readAsString();
       }
     }
-  });
+  }
 }
