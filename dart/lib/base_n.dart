@@ -7,8 +7,6 @@ import "package:crypto/crypto.dart" show sha256;
 
 int _logint(int v) => (log(v) * 10000).truncate();
 
-final int ln_256 = _logint(256);
-
 final alphabets = Map.unmodifiable({
   2: "01",
   8: "01234567",
@@ -22,54 +20,54 @@ final alphabets = Map.unmodifiable({
   67: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~",
 });
 
-var _cached_alphabets = {};
 
 class CodecDirection {
-  List<int> bases;
-  List<int> logs;
+  final int base1, base2;
+  final int log1, log2;
 
-  CodecDirection(this.bases, this.logs);
+  CodecDirection(this.base1, this.base2)
+      : log1 = _logint(base1),
+        log2 = _logint(base2);
 
-  int aproximate_size(int size) {
-    return 1 + size * logs[0] ~/ logs[1];
+  int aproximateSize(int size) {
+    return 1 + size * log1 ~/ log2;
   }
 
   int divmod(List<int> digits, int startAt) {
     int remaining = 0;
     for (int i = startAt; i < digits.length; i++) {
-      int num = bases[0] * remaining + digits[i];
-      digits[i] = num ~/ bases[1];
-      remaining = num % bases[1];
+      int num = base1 * remaining + digits[i];
+      digits[i] = num ~/ base2;
+      remaining = num % base2;
     }
     return remaining;
   }
 }
 
+var _cached_alphabets = {};
+
 class Alphabet {
   final String key;
   final List<int> _forward;
   final Map<int, int> _inverse;
-  final int ln_base;
-
-  factory Alphabet(String text) {
-    return _cached_alphabets.putIfAbsent(text, () => Alphabet._internal(text));
-  }
+  final CodecDirection encode_direction;
+  final CodecDirection decode_direction;
 
   Alphabet._internal(text)
       : key = text,
         _forward = List.unmodifiable(text.runes),
         _inverse = Map.unmodifiable(Map.fromIterables(
             text.runes, List.generate(text.length, (i) => i))),
-        ln_base = _logint(text.length);
+        decode_direction = CodecDirection(text.length, 256),
+        encode_direction = CodecDirection(256, text.length);
+
+  factory Alphabet(String text) {
+    return _cached_alphabets.putIfAbsent(text, () => Alphabet._internal(text));
+  }
 
   factory Alphabet.predefined(int id) {
     return Alphabet(alphabets[id]);
   }
-
-  CodecDirection get decode_direction =>
-      CodecDirection([length, 256], [ln_base, ln_256]);
-  CodecDirection get encode_direction =>
-      CodecDirection([256, length], [ln_256, ln_base]);
 
   int get length => key.length;
 
@@ -97,7 +95,19 @@ abstract class BaseN extends Codec<List<int>, String> {
   DigitsEncoder _encoder;
   DigitsDecoder _decoder;
 
-  List<int> codeDigits(List<int> digits, CodecDirection direction);
+  List<int> codeDigits(List<int> digits, CodecDirection direction) {
+    if (digits.length == 0) return [];
+    int leadingZeros = countLeadingZeros(digits);
+    int codeSize = direction.aproximateSize(digits.length - leadingZeros);
+    Uint8List out = Uint8List(leadingZeros + codeSize);
+    int firstNonZero = repackDigits(digits, direction, leadingZeros, out);
+    return firstNonZero == leadingZeros
+        ? out
+        : out.sublist(firstNonZero - leadingZeros);
+  }
+
+  int repackDigits(List<int> digits, CodecDirection direction, int leadingZeros,
+      Uint8List out);
 
   String encodeCheck(List<int> bytes) {
     Uint8List buffer = Uint8List(bytes.length + 4);
@@ -130,7 +140,7 @@ abstract class BaseN extends Codec<List<int>, String> {
   Converter<String, List<int>> get decoder => _decoder;
 }
 
-int countleadingZeros(List<int> digits) {
+int countLeadingZeros(List<int> digits) {
   int z = 0;
   while (z < digits.length && digits[z] == 0) z++;
   return z;
@@ -158,24 +168,40 @@ class LoopBaseN extends BaseN {
   LoopBaseN(Alphabet alphabet) : super(alphabet);
 
   @override
-  List<int> codeDigits(List<int> bytes, CodecDirection direction) {
-    if (bytes.length == 0) return [];
-    int leadingZeroes = countleadingZeros(bytes);
-    int startAt = leadingZeroes;
-    int codeSize = direction.aproximate_size(bytes.length - leadingZeroes);
-    Uint8List out = Uint8List(leadingZeroes + codeSize);
+  int repackDigits(List<int> digits, CodecDirection direction, int leadingZeros,
+      Uint8List out) {
+    int startAt = leadingZeros;
     int j = out.length;
-    int lastNonZero = j;
-    while (startAt < bytes.length && leadingZeroes < j) {
-      int mod = direction.divmod(bytes, startAt);
-      if (bytes[startAt] == 0) startAt++;
+    int firstNonZero = j;
+    while (startAt < digits.length && leadingZeros < j) {
+      int mod = direction.divmod(digits, startAt);
+      if (digits[startAt] == 0) startAt++;
       out[--j] = mod;
-      if (mod != 0) lastNonZero = j;
+      if (mod != 0) firstNonZero = j;
     }
-    return lastNonZero == leadingZeroes
-        ? out
-        : out.sublist(lastNonZero - leadingZeroes);
+    return firstNonZero;
   }
 }
 
-//TODO: class BigIntBaseN extends BaseN {}
+class BigIntBaseN extends BaseN {
+  BigIntBaseN(Alphabet alphabet) : super(alphabet);
+
+  @override
+  int repackDigits(List<int> digits, CodecDirection direction, int leadingZeros,
+      Uint8List out) {
+    var base1 = BigInt.from(direction.base1);
+    var base2 = BigInt.from(direction.base2);
+    BigInt acc = digits
+        .sublist(leadingZeros)
+        .fold(BigInt.zero, (p, n) => p * base1 + BigInt.from(n));
+    int j = out.length;
+    int firstNonZero = j;
+    while (acc > BigInt.zero) {
+      int mod = (acc % base2).toInt();
+      acc = acc ~/ base2;
+      out[--j] = mod;
+      if (mod != 0) firstNonZero = j;
+    }
+    return firstNonZero;
+  }
+}

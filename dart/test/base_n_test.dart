@@ -49,22 +49,29 @@ void main() {
     test("testSamples", () {
       loadSamples().onDone(() {
         expect(BINS.length, equals(40));
-        Map<int, BaseN> codecs = Map.fromIterable(alphabets.keys, value: (abcId) => LoopBaseN(Alphabet.predefined(abcId)));
-        ENCODES.forEach((ekey, v) { 
-          List<int> bytes = BINS[ekey.test_name];
-          BaseN c = codecs[ekey.base];
-          var encode = c.encode(bytes);
-          expect(encode, equals(v));
-          expect(c.decode(encode), equals(bytes));
-        });
-        ENCODES_WITH_CHECK.forEach((ekey, v) { 
-          List<int> bytes = BINS[ekey.test_name];
-          BaseN c = codecs[ekey.base];
-          var encode = c.encodeCheck(bytes);
-          expect(encode, equals(v));
-          expect(c.decodeCheck(encode), equals(bytes));
-        });
+        runThruSamples((id) => BigIntBaseN(Alphabet.predefined(id)) as BaseN);
+        runThruSamples((id) => LoopBaseN(Alphabet.predefined(id)) as BaseN);
       });
     });
   });
+}
+
+runThruSamples(BaseN value(Alphabet)) {
+  var sw = Stopwatch()..start();
+  Map<int, BaseN> codecs = Map.fromIterable(alphabets.keys, value: value);
+  ENCODES.forEach((ekey, v) {
+    List<int> bytes = BINS[ekey.test_name];
+    BaseN c = codecs[ekey.base];
+    var encode = c.encode(bytes);
+    expect(encode, equals(v));
+    expect(c.decode(encode), equals(bytes));
+  });
+  ENCODES_WITH_CHECK.forEach((ekey, v) {
+    List<int> bytes = BINS[ekey.test_name];
+    BaseN c = codecs[ekey.base];
+    var encode = c.encodeCheck(bytes);
+    expect(encode, equals(v));
+    expect(c.decodeCheck(encode), equals(bytes));
+  });
+  print('${codecs[58].runtimeType}:${sw.elapsedMicroseconds}');
 }
