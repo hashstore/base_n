@@ -32,7 +32,6 @@ void main() {
     test("Alphabet", () {
       Alphabet abc = Alphabet("abc");
       expect('cba', abc.to_chars([2, 1, 0]));
-      expect(3, abc.length);
       expect([0, 0, 2, 1], abc.to_digits('aacb'));
     });
     test("bitcoin_vectors", () {
@@ -46,8 +45,8 @@ void main() {
             reason: "decode " + vector.toString());
       }
     });
-    test("testSamples", () {
-      loadSamples().then((_) {
+    test("testSamples", () async {
+      return loadSamples().then((_) {
         expect(BINS.length, equals(40));
         runThruSamples((id) => BigIntBaseN(Alphabet.predefined(id)) as BaseN);
         runThruSamples((id) => LoopBaseN(Alphabet.predefined(id)) as BaseN);

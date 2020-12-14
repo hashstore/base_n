@@ -69,8 +69,6 @@ class Alphabet {
     return Alphabet(alphabets[id]);
   }
 
-  int get length => key.length;
-
   List<int> to_digits(String chars) => [for (var c in chars.runes) _inverse[c]];
 
   String to_chars(List<int> digits) =>
@@ -112,7 +110,7 @@ abstract class BaseN extends Codec<List<int>, String> {
   String encodeCheck(List<int> bytes) {
     Uint8List buffer = Uint8List(bytes.length + 4);
     buffer.setRange(0, bytes.length, bytes);
-    List<int> checksum = _sha256x2(bytes.sublist(0, bytes.length));
+    List<int> checksum = _sha256x2(bytes);
     buffer.setRange(bytes.length, buffer.length, checksum);
     return encode(buffer);
   }
