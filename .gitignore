@@ -4,3 +4,7 @@ __pycache__
 .pytest_cache
 .coverage
 dart/.dart_tool
+kotlin/.idea
+kotlin/target
+*.iml
+.DS_Store
