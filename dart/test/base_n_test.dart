@@ -55,7 +55,7 @@ void main() {
   });
 }
 
-runThruSamples(BaseN value(Alphabet)) {
+runThruSamples(BaseN value(int)) {
   var sw = Stopwatch()..start();
   Map<int, BaseN> codecs = Map.fromIterable(alphabets.keys, value: value);
   ENCODES.forEach((ekey, v) {
