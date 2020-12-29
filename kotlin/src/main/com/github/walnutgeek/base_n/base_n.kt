@@ -72,10 +72,8 @@ class Alphabet private constructor(val key:String){
 
 }
 
-fun countLeadingZeros(digits: IntArray): Int {
-    var z = 0
-    while (z < digits.size && digits[z] == 0) z++
-    return z
+tailrec fun countLeadingZeros(digits: IntArray, z: Int = 0): Int {
+    return if (z < digits.size && digits[z] == 0) countLeadingZeros(digits, z+1) else z
 }
 
 abstract class BaseN {
